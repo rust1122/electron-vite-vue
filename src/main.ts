@@ -1,5 +1,8 @@
 import { createApp } from 'vue'
 import App from './App.vue'
+import { router } from '@/router/index'
+import PrimeVue from 'primevue/config';
+import Aura from '@primevue/themes/aura';
 
 import './style.css'
 
@@ -8,6 +11,12 @@ import './demos/ipc'
 // import './demos/node'
 
 createApp(App)
+  .use(router)
+  .use(PrimeVue, {
+    theme: {
+        preset: Aura
+    }
+  })
   .mount('#app')
   .$nextTick(() => {
     postMessage({ payload: 'removeLoading' }, '*')
