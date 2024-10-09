@@ -39,6 +39,8 @@
   "dependencies": {
     "@primevue/themes": "^4.0.7",
     "primevue": "^4.0.7",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "vue-router": "4"
   }
 }
