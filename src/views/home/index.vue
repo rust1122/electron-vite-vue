@@ -1,102 +1,121 @@
+<!-- frontend/src/components/Scraper.vue -->
 <template>
-  <div id="app">
-    <h1>FaceBook 帖子搜索</h1>
-    <input v-model="searchQuery" placeholder="输入标签搜索..." />
-    
-    <div>帖子数量<input v-model="cNumber"></input></div>
-    <div>多开数量<input v-model="pageNumber"></input></div>
-    
-    <button @click="searchPosts">搜索</button>
-
-    <div v-if="loading">加载中...</div>
-    <div v-if="error" class="error">{{ error }}</div>
-
-    <div v-if="posts.length">
-      <h2>搜索结果：</h2>
-      <div class="posts">
-        <div v-for="post in posts" :key="post.link" class="post">
-          {{ post }}
-          <!-- <a :href="post.link" target="_blank" rel="noopener noreferrer">
-            <img :src="post.image" :alt="post.alt" />
-          </a> -->
-        </div>
-      </div>
+  <div class="scraper-container">
+    <!-- <h1>Ins 评论爬取器</h1> -->
+    <div class="input-group">
+      <input v-model="keyword" placeholder="输入关键词" />
+      
     </div>
+    <button @click="startLogin">
+        登录
+      </button>
+    <button @click="startScraping" :disabled="loading">
+        {{ loading ? '爬取中...' : '开始爬取' }}
+      </button>
+    <div v-if="error" class="error">{{ error }}</div>
+    <ul v-if="comments.length" class="comments-list">
+      <li v-for="(comment, index) in comments" :key="index">{{ comment }}</li>
+    </ul>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref } from 'vue'
 
-const searchQuery = ref('');
-const posts = ref([]);
-const loading = ref(false);
-const error = ref('');
+// 定义响应式变量
+const keyword = ref('')
+const comments = ref([])
+const loading = ref(false)
+const error = ref('')
 
-const cNumber=ref(10)
-const pageNumber = ref(1)
 
-const searchPosts = async () => {
-  if (!searchQuery.value) {
-    error.value = '请输入搜索关键词';
-    return;
+// 登录
+const startLogin = async () => {
+  window.ipcRenderer.loginInstagram()
+}
+
+// 定义爬取函数
+const startScraping = async () => {
+  if (!keyword.value.trim()) {
+    alert('请输入关键词')
+    return
   }
-  loading.value = true;
-  error.value = '';
-  posts.value = [];
+
+  loading.value = true
+  comments.value = []
+  error.value = ''
+
   try {
-    const response = await window.ipcRenderer.fetchInstagramPosts(searchQuery.value, {
-      crawlNumber: cNumber.value,
-      pageNumber: pageNumber.value
-    });
-    if (response.success) {
-      posts.value = response.data;
+    // 调用主进程的 `startScraping` 方法，通过 `window.electronAPI`
+    const result = await window.ipcRenderer.fetchInstagramPosts({keyword: keyword.value})
+
+    if (result.success) {
+      comments.value = result.comments
     } else {
-      error.value = response.error;
+      error.value = result.error || '爬取失败'
     }
   } catch (err) {
-    error.value = '发生错误，请稍后重试';
+    error.value = err.message || '发生错误'
   } finally {
-    loading.value = false;
+    loading.value = false
   }
-};
+}
 </script>
 
-<style>
-/* 添加一些基本样式 */
-#app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
+<style scoped>
+.scraper-container {
+  max-width: 600px;
+  margin: 50px auto;
   padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background-color: #f9f9f9;
+}
+
+h1 {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.input-group {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
 }
 
 input {
-  padding: 8px;
-  width: 200px;
+  flex: 1;
+  padding: 10px;
+  font-size: 16px;
 }
 
 button {
-  padding: 8px 12px;
-  margin-left: 10px;
+  padding: 10px 20px;
+  font-size: 16px;
+  cursor: pointer;
 }
 
-.posts {
-  display: flex;
-  flex-wrap: wrap;
-  margin-top: 20px;
-}
-
-.post {
-  margin: 10px;
-}
-
-.post img {
-  width: 150px;
-  height: 150px;
-  object-fit: cover;
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .error {
   color: red;
-  margin-top: 10px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.comments-list {
+  list-style: none;
+  padding: 0;
+}
+
+.comments-list li {
+  background-color: #fff;
+  padding: 10px;
+  margin-bottom: 10px;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 </style>

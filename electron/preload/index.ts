@@ -21,7 +21,7 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
 
   // You can expose other APTs you need here.
   // ...
-
+  loginInstagram: ()=> ipcRenderer.invoke('login-instagram'),
   fetchInstagramPosts: (query, config) => ipcRenderer.invoke('fetch-instagram-posts', query, config)
 })
 
