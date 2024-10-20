@@ -21,6 +21,8 @@ import menuComp from '@/components/menu.vue';
   height: 100%;
   .layout-area {
     display: flex;
+    widows: 100%;
+    height: 100%;
   }
 }
 </style>

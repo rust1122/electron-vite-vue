@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain } from "electron";
+import { app, BrowserWindow, shell, ipcMain, protocol } from "electron";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -9,7 +9,7 @@ import { chromium } from "playwright-extra";
 import stealth from "puppeteer-extra-plugin-stealth";
 import type { BrowserContext, BrowserContextOptions } from "playwright";
 import { test, expect } from "@playwright/test";
-import { simulateHumanClick, randomDelay, simulateHumanTyping, simulateHumanScroll } from './utils'
+import { simulateHumanClick, randomDelay, simulateHumanTyping, simulateHumanScroll, handlePostResponse, handleCommentsResponse } from './utils'
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -51,11 +51,19 @@ let win: BrowserWindow | null = null;
 const preload = path.join(__dirname, "../preload/index.mjs");
 const indexHtml = path.join(RENDERER_DIST, "index.html");
 
+
+
 async function createWindow() {
+  protocol.registerHttpProtocol('safe-img', (request, callback) => {
+    const url = request.url.replace('safe-img://', 'https://');
+    callback({ url });
+  });
+  
   win = new BrowserWindow({
     title: "Main window",
     icon: path.join(process.env.VITE_PUBLIC, "favicon.ico"),
     webPreferences: {
+      webSecurity: false, // 禁用 Web 安全性，绕过跨域限制
       preload,
       // Warning: Enable nodeIntegration and disable contextIsolation is not secure in production
       // nodeIntegration: true,
@@ -216,37 +224,134 @@ ipcMain.handle("fetch-instagram-posts", async (event, { keyword }) => {
 
     const searchMenuDom = await page.locator('div:nth-child(2) > span > div > a > div > div > div > div > svg')
     console.log('找到搜索菜单dom', searchMenuDom)
-    simulateHumanClick(page, searchMenuDom)
+    await simulateHumanClick(page, searchMenuDom)
 
     await randomDelay()
 
     const searchInputDom = await page.locator('div > div > div > div > div > input')
+    // const searchInputDom =  await page
+    // .locator('div')
+    // .filter({
+    //   has: page.locator('hr')
+    // })
+    // .locator('input')
     console.log('找到搜索inputdom', searchInputDom)
     // 模拟输入关键词
     await simulateHumanTyping(page, searchInputDom, keyword)
 
     await randomDelay()
+    await page.waitForLoadState('networkidle')
 
-    // // 点击第一个话题
+    // 点击第一个话题
     // const searchResultDom = await page.locator('header > div > div > div.xq8finb > div > div > div > div > div > div > div > div > div > div > div > div > a:nth-child(1)')
-    // if (await searchResultDom.count() > 0) {
-    //   await simulateHumanClick(page, searchResultDom);
-    // } else {
-    //   // 没有相关帖子
-    // }
+    await randomDelay(1000)
+    const searchResultDom = await page
+    .getByRole('link')
+    .filter({
+      hasText: /.*?篇帖子/g
+    })
+    .nth(0)
 
-    // await page.waitForLoadState('networkidle')
+    if (await searchResultDom.count() > 0) {
+      await simulateHumanClick(page, searchResultDom);
+    } else {
+      // 没有相关帖子
+      throw new Error('没有相关帖子')
+    }
+
+    await page.waitForLoadState('networkidle')
     
-    // const post = []
+    const postSet = new Set<string>()
+    const commentsMap = {};
 
-    // page.on('response', data => {
-    //   console.log(data.url)
-    // })
-    // while(post)
-    // // 开始滚动
-    // await simulateHumanScroll(page)
+    page.on('response', response => {
+      if (response.url().includes('fbsearch/web/top_serp')) {
+        handlePostResponse(postSet, response);
+      } 
+      else if (response.url().includes('/child_comments')) {
+        handleCommentsResponse(commentsMap, response, 'child_comments');
+      }
+      else if (response.url().includes('/comments')) {
+        handleCommentsResponse(commentsMap, response);
+      } 
 
-    return { success: true, comments: [] };
+    })
+    // 开始滚动 收集帖子链接
+    while(postSet.size < 3) {
+      console.log('当前postSet size', postSet.size);
+      
+      await simulateHumanScroll(page, {
+        distance: 100
+      })
+    }
+   
+    await page.waitForLoadState('networkidle')
+
+    // 开始逐个遍历帖子
+    const aLinks = await page.getByRole('link')
+    let cur = 0
+    const total = await aLinks.count()
+    while(cur < 1) {
+      const curLink = aLinks.nth(cur)
+      console.log(await curLink.textContent())
+      await simulateHumanClick(page, curLink)
+      // 遍历评论开始
+      console.log('--- 遍历评论开始 ---')
+
+      const travseComments = async ()=> {
+        await travseReplays()
+        // 加载更多评论 按钮
+        const moreComments = await page.getByLabel('加载更多评论');
+        try {
+          await moreComments.scrollIntoViewIfNeeded({timeout: 900});
+          while(await moreComments.count()) {
+            await simulateHumanClick(page, moreComments);
+            await page.waitForLoadState('networkidle')
+            await randomDelay()
+            await travseComments()
+          }
+        } catch (error) {
+          console.log('未找到加载更多评论按钮')
+        }
+      }
+
+      const travseReplays = async ()=> {
+        // 查看回复 按钮
+        const moreReplays = await page.getByRole('button').filter({
+          hasText: /查看回复\s*\((\d+)\)/g
+        });
+        try {
+          await moreReplays.scrollIntoViewIfNeeded({timeout: 1000});
+          while(await moreReplays.count()) {
+            const count = await moreReplays.count()
+            let cur = 0;
+            while(cur < count) {
+              const curDom = moreReplays.nth(cur)
+              await simulateHumanClick(page, curDom);
+              await page.waitForLoadState('networkidle')
+              await randomDelay()
+              cur++;
+            }
+            await travseReplays()
+          }
+        } catch (error) {
+          console.log('未找到查看回复按钮')
+        }
+       
+      }
+
+      await travseComments()
+
+      console.log('--- 遍历评论结束 ---')
+
+      const closeSvg = page.getByLabel('关闭')
+      await randomDelay()
+      await simulateHumanClick(page, closeSvg)
+      cur++
+    }
+    
+
+    return { success: true, comments: commentsMap };
   } catch (error) {
     console.error(error);
     return { success: false, error: error.message };

@@ -133,8 +133,9 @@ export const simulateHumanTyping = async (
     return;
   }
 
-  // 将错误率引入文本
-  const simulatedText = simulateTypingErrors(text);
+  // // 将错误率引入文本
+  // const simulatedText = simulateTypingErrors(text);
+  const simulatedText = text
 
   let pauseProbability = 0.05; // 5%的概率在任何时候暂停
   let pauseDurationRange = [500, 2000]; // 停顿时间在0.5秒到2秒之间
@@ -206,6 +207,13 @@ export const simulateHumanScroll = async (page: Page, options: {
 
   const scrollCount = Math.ceil(totalScrollDistance / scrollStep);
   const delayBetweenScrolls = scrollDuration / scrollCount; // 每次滚动之间的延迟
+  console.log({
+    totalScrollDistance,
+    scrollDuration,
+    scrollStep,
+    scrollCount,
+    delayBetweenScrolls
+  })
 
   for (let i = 0; i < scrollCount; i++) {
     // 动态计算当前滚动步长
@@ -228,3 +236,29 @@ export const simulateHumanScroll = async (page: Page, options: {
     }
   }
 };
+
+export const handlePostResponse = async (postSet: Set<String>, response: any)=> {
+  const jsonData = await response?.json()
+  const sections = jsonData?.media_grid?.sections || [];
+  for(let section of sections) {
+    for(let media of section?.layout_content?.medias) {
+      postSet.add(media?.media?.code)
+    }
+  }
+}
+
+export const handleCommentsResponse = async (commentsMap: Record<string, any>, response: any, keyStr = 'comments')=> {
+  const jsonData = await response?.json()
+  const headerReferer = await response?.request()?.allHeaders()
+  console.log(headerReferer, headerReferer.referer)
+  const comments = jsonData?.[keyStr] || [];
+  for(let comment of comments) {
+    const pk = comment.pk;
+    if (!commentsMap[pk]) {
+      commentsMap[pk] = {
+        ...comment,
+        headerReferer
+      }
+    }
+  }
+}
